@@ -14,7 +14,7 @@ type Capsule = {
   id: string;
   videoUrl: string;
   createdAt: Timestamp;
-  openAt: Timestamp;
+  unlockDate: Timestamp;
 };
 
 type Props = {
@@ -24,41 +24,66 @@ type Props = {
 export function CapsuleList({ user }: Props) {
   const [capsules, setCapsules] = useState<Capsule[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     async function fetchCapsules() {
-      const q = query(
-        collection(db, "capsulas"),
-        where("userId", "==", user.uid),
-        orderBy("createdAt", "desc")
-      );
+      try {
+        const q = query(
+          collection(db, "capsules"), 
+          where("userId", "==", user.uid),
+          orderBy("createdAt", "desc")
+        );
 
-      const snapshot = await getDocs(q);
+        const snapshot = await getDocs(q);
 
-      const data: Capsule[] = snapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...(doc.data() as Omit<Capsule, "id">),
-      }));
+        const data: Capsule[] = snapshot.docs.map((doc) => {
+          const d = doc.data();
 
-      setCapsules(data);
-      setLoading(false);
+          return {
+            id: doc.id,
+            videoUrl: d.videoUrl,
+            createdAt: d.createdAt,
+            unlockDate: d.unlockDate, 
+          };
+        });
+
+        setCapsules(data);
+      } catch (err) {
+        console.error("Erro ao buscar cápsulas:", err);
+        setError("Erro ao carregar cápsulas.");
+      } finally {
+        setLoading(false);
+      }
     }
 
     fetchCapsules();
   }, [user.uid]);
 
-  function isUnlocked(openAt: Timestamp) {
-    return new Date() >= openAt.toDate();
+  function isUnlocked(unlockDate: Timestamp) {
+    return new Date() >= unlockDate.toDate();
   }
 
-  function daysLeft(openAt: Timestamp) {
+  function daysLeft(unlockDate: Timestamp) {
     const diff =
-      openAt.toDate().getTime() - new Date().getTime();
-    return Math.ceil(diff / (1000 * 60 * 60 * 24));
+      unlockDate.toDate().getTime() - new Date().getTime();
+    return Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)));
   }
 
   if (loading) {
-    return <p className="text-gray-400 text-center">Carregando cápsulas…</p>;
+    return (
+      <p className="text-gray-400 text-center">
+        Carregando cápsulas…
+      </p>
+    );
+  }
+
+  if (error) {
+    return (
+      <p className="text-red-400 text-center">
+        {error}
+      </p>
+    );
   }
 
   if (capsules.length === 0) {
@@ -72,7 +97,7 @@ export function CapsuleList({ user }: Props) {
   return (
     <div className="flex flex-col gap-4">
       {capsules.map((capsule) => {
-        const unlocked = isUnlocked(capsule.openAt);
+        const unlocked = isUnlocked(capsule.unlockDate);
 
         return (
           <div
@@ -82,15 +107,17 @@ export function CapsuleList({ user }: Props) {
             {!unlocked ? (
               <div className="text-center text-gray-300">
                 🔒 <strong>Cápsula bloqueada</strong>
+
                 <p className="text-sm mt-1">
                   Abre em{" "}
                   <span className="font-semibold">
-                    {daysLeft(capsule.openAt)} dias
+                    {daysLeft(capsule.unlockDate)} dias
                   </span>
                 </p>
+
                 <p className="text-xs text-gray-500 mt-1">
                   Data:{" "}
-                  {capsule.openAt
+                  {capsule.unlockDate
                     .toDate()
                     .toLocaleDateString()}
                 </p>
@@ -102,9 +129,10 @@ export function CapsuleList({ user }: Props) {
                   controls
                   className="rounded-lg w-full aspect-video bg-black"
                 />
+
                 <span className="text-xs text-gray-400">
                   Aberta em{" "}
-                  {capsule.openAt
+                  {capsule.unlockDate
                     .toDate()
                     .toLocaleDateString()}
                 </span>
